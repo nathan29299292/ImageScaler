@@ -36,8 +36,8 @@ namespace ImageScaler {
             int height;
             int width;
 
-            double cubic_interpolation(double* p, double x);
-            double bicubic_interpolation(double ** p, double x, double y);
+            double cubic_interpolation(double p[4], double x);
+            double bicubic_interpolation(double p[4][4], double x, double y);
             void basic_construct(Color fill, int height, int width);
     };
 }

@@ -121,22 +121,26 @@ namespace ImageScaler {
 
        png_init_io(imagep, fd);
 
+       // Set the IHDR of the image.
        png_set_IHDR(imagep, info_ptr, (png_uint_32)width, (png_uint_32)height, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
-       // Load up the image data.
 
+       // Insert the image data into the buffer.
        png_bytepp row_ptr = (png_bytepp)malloc(sizeof(png_bytep) * height);
        for (int y = 0; y < height; y++) {
+
            png_bytep row = (png_bytep)malloc(sizeof(unsigned char) * 3 * width);
            for (int x = 0; x < width * 3; x += 3) {
                double r = data[POSITION(x, y, width, 0)];
                double g = data[POSITION(x, y, width, 1)];
                double b = data[POSITION(x, y, width, 2)];
 
-               unsigned char converted_r = (unsigned char)(static_cast<int>(std::floor(r * 255.0)));
-               unsigned char converted_g = (unsigned char)(static_cast<int>(std::floor(g * 255.0)));
-               unsigned char converted_b = (unsigned char)(static_cast<int>(std::floor(b * 255.0)));
+               // Convert the floating point values into a 8-bit chars.
+               unsigned char converted_r = static_cast<unsigned char>(static_cast<int>(std::floor(r * 255.0)));
+               unsigned char converted_g = static_cast<unsigned char>(static_cast<int>(std::floor(g * 255.0)));
+               unsigned char converted_b = static_cast<unsigned char>(static_cast<int>(std::floor(b * 255.0)));
 
-               row[x + 0] = converted_r;
+               // Set the row values.
+               row[x] = converted_r;
                row[x + 1] = converted_g;
                row[x + 2] = converted_b;
            }
@@ -164,35 +168,26 @@ namespace ImageScaler {
     }
 
     Color Image::get_pixel_bicubic(double x, double y) {
-        int nearest_x = (int)(floor(x));
-        int nearest_y = (int)(floor(y));
+        int nearest_x = (int)floor(x);
+        int nearest_y = (int)floor(y);
 
-        double local_x = x - (double)(nearest_x);
-        double local_y = y - (double)(nearest_y);
+        // Get the relative x and y position within a pixel.
+        double local_x = x - (double)nearest_x;
+        double local_y = y - (double)nearest_y;
 
-        // This use of alloca is acceptable (I don't think a 48 element 2d array 
-        // is going to cause a stack overflow.), though not ideal...
-        // Ideally, this would be statically allocated.
+        // Create a 4x4 matrix.
+        double rp[4][4];
+        double gp[4][4];
+        double bp[4][4];
 
-        // Really avoid pointers unless you have to use them.
-        // I am only using them because I am an idiot.
-
-        // Anyways, this creates a 4x4 matrix.
-        double** rp = (double **)alloca(sizeof(double *) * 4);
-        double** gp = (double **)alloca(sizeof(double *) * 4);
-        double** bp = (double **)alloca(sizeof(double *) * 4);
-
-        for (int i = 0; i < 4; i++) {
-            rp[i] = (double *)alloca(sizeof(double) * 4);
-            gp[i] = (double *)alloca(sizeof(double) * 4);
-            bp[i] = (double *)alloca(sizeof(double) * 4);
-        }
-
+        // Fill the matrix based on nearest values.
         for (int i = 0; i < 4; i++) {
             for (int j = 0; j < 4; j++) {
-                int test_x = nearest_x+(i-1);
-                int test_y = nearest_y+(j-1);
+                // Get the current, previous, and next pixel.
+                int test_x = nearest_x + (i-1);
+                int test_y = nearest_y + (j-1);
 
+                // Store the data in the matrix.
                 if (POSITION_CHECK(test_x, test_y, height, width)) {
                     rp[i][j] = 0;
                     gp[i][j] = 0;
@@ -205,33 +200,30 @@ namespace ImageScaler {
             }
         }
 
-        // This is a hack, I should really make a clamp function. Not use fmax fmin.
-        // This was used to fix a bug.
+        // Clamp the red, green, and blue channels.
         double r = fmax(fmin(bicubic_interpolation(rp, local_x, local_y), 1.0), 0.0);
         double g = fmax(fmin(bicubic_interpolation(gp, local_x, local_y), 1.0), 0.0);
         double b = fmax(fmin(bicubic_interpolation(bp, local_x, local_y), 1.0), 0.0);
 
-        Color out_color;
-        out_color.r = r;
-        out_color.g = g;
-        out_color.b = b;
+        // Create a new color value.
+        Color out_color = {r, g, b};
 
         return out_color;
     }
 
-    double Image::cubic_interpolation(double* p, double x) {
+    double Image::cubic_interpolation(double p[4], double x) {
         double a = (-0.5 * p[0]) + (1.5 * p[1]) + (-1.5 * p[2]) + (0.5 * p[3]);
         double b = p[0] + (-2.5 * p[1]) + (2 * p[2]) + (-0.5 * p[3]);
         double c = -0.5 * p[0] + 0.5 * p[2];
         double d = p[1];
 
-        return (a * (x * x * x)) + (b * (x * x)) + (c * (x)) + d;
+        return (a * (x * x * x)) + (b * (x * x)) + (c * (x)) + d; // ax^3 + bx^2 + cx + d
     }
 
-    double Image::bicubic_interpolation(double** p, double x, double y) {
+    double Image::bicubic_interpolation(double p[4][4], double x, double y) {
         double results[4];
 
-        
+        // Find the cubic interpolation of each row.
         results[0] = cubic_interpolation(p[0], y);
         results[1] = cubic_interpolation(p[1], y);
         results[2] = cubic_interpolation(p[2], y);
